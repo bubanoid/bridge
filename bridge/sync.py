@@ -1,6 +1,7 @@
 from gevent import monkey
 monkey.patch_all()
 
+from restkit.errors import RequestFailed, RequestError
 from retrying import retry
 from openprocurement_client.client import APIBaseClient
 from utils import threaded
@@ -30,6 +31,12 @@ class Sync(APIBaseClient):
             resp = self.get(self.prefix_path, params_dict=params).body_string()
             tender_list = loads(resp)
             return tender_list['data'], tender_list['next_page']
+        except RequestFailed, e:
+            self.Logger.info("Request falied with error {}".format(e))
+        except RequestError, e:
+            self.Logger.info(
+                "Error {}  with request params {}".format(e, params)
+            )
         except Exception, e:
             self.Logger.info("Error while loading feeds {}".format(e))
 

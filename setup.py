@@ -4,6 +4,7 @@ install_requires = [
     'couchdb>=1.0.1',
     'gevent',
     'openprocurement_client',
+    'restkit',
 ]
 
 

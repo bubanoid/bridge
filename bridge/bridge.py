@@ -15,6 +15,7 @@ from logging.config import fileConfig
 from sync import Sync
 from datetime import datetime
 from utils import create_db_url, threaded
+from restkit.errors import RequestFailed, RequestError
 
 
 class Bridge(object):
@@ -81,12 +82,28 @@ class Bridge(object):
                     self.Logger.info(
                         'Tender id={} not in database'.format(tender['id'])
                     )
-                    self.client.get_tender(
-                        tender['id'], self.to_put_queue
-                    )
-                    self.Logger.info(
-                        'Successfully got tender id={}'.format(tender['id'])
-                    )
+                    try:
+                        self.client.get_tender(
+                            tender['id'], self.to_put_queue
+                        )
+                        self.Logger.info(
+                            'Successfully got tender'
+                            ' id={}'.format(tender['id'])
+                        )
+                    except RequestFailed, e:
+                        self.Logger.info(
+                            "Request falied while getting tender id={} "
+                            "with error {}".format(tender['id'], e))
+                    except RequestError, e:
+                        self.Logger.info(
+                            "RequestError {} while getting tender "
+                            "id={}".format(e, tender['id'])
+                        )
+                    except Exception, e:
+                        self.Logger.info(
+                            "Error while loading feeds {}".format(e)
+                        )
+
                 else:
                     doc = self.db.get(tender['id'])
                     if tender['dateModified'] > doc['dateModified']:
@@ -96,11 +113,12 @@ class Bridge(object):
 
     def run(self):
         try:
+            self.Logger.info('Start working at {}'.format(datetime.now()))
             jobs = [self.client.get_tenders_forward(self.to_get_queue),
                     self.client.get_tenders_backward(self.to_get_queue),
                     self.get_tender(), self.save_docs()]
             gevent.joinall(jobs)
-            self.Logger.info('Start working at {}'.format(datetime.now()))
+            self.Logger.info('Finish work at {}'.format(datetime.now()))
         except KeyboardInterrupt:
             gevent.killall(jobs)
 
