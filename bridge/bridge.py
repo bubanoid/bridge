@@ -10,6 +10,7 @@ from ConfigParser import ConfigParser
 from logging import getLogger
 from logging.config import fileConfig
 from sync import Sync
+from datetime import datetime
 from utils import create_db_url, threaded
 
 
@@ -35,7 +36,6 @@ class Bridge(object):
             config.get('db', 'host'),
             config.get('db', 'port'),
         )
-        print db_url
         self.get_db(db_url, config.get('db', 'name'))
 
     def get_db(self, url, name):
@@ -44,19 +44,23 @@ class Bridge(object):
             self.db = server.create(name)
         else:
             self.db = server[name]
+        self.Logger.info('Connected to db {} on {}'.format(name, url))
 
     @threaded
     def save_docs(self):
         while True:
             tender = self.to_put_queue.get()
+            print tender
             if not tender:
                 continue
-            if tender.id not in self.db:
-                self.db[tender.id] = tender.data
+            if tender.data.id not in self.db:
+                self.db[tender.data.id] = tender.data
+                self.Logger.info('Saving tender id={}'.format(tender.data.id))
             else:
-                doc = self.db.get(tender.id)
+                doc = self.db.get(tender.data.id)
                 doc = tender
                 self.db.save(doc)
+                self.Logger.info('Update tender id={}'.format(tender.data.id))
 
     @threaded
     def get_tender(self):
@@ -66,14 +70,20 @@ class Bridge(object):
                 continue
             for tender in tenders_list:
                 if tender['id'] not in self.db:
+                    self.Logger.info(
+                        'Tender id={} not in database'.format(tender['id'])
+                    )
                     self.client.get_tender(
-                        tender.id, self.to_put_queue
+                        tender['id'], self.to_put_queue
+                    )
+                    self.Logger.info(
+                        'Successfully got tender id={}'.format(tender['id'])
                     )
                 else:
                     doc = self.db.get(tender['id'])
                     if tender['dateModified'] > doc['dateModified']:
                         self.client.get_tender(
-                            tender.id, self.to_put_queue
+                            tender['id'], self.to_put_queue
                         )
 
     def run(self):
@@ -82,6 +92,7 @@ class Bridge(object):
                     self.client.get_tenders_backward(self.to_get_queue),
                     self.get_tender(), self.save_docs()]
             gevent.joinall(jobs)
+            self.Logger.info('Start working at {}'.format(datetime.now()))
         except KeyboardInterrupt:
             gevent.killall(jobs)
 

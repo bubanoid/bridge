@@ -4,6 +4,8 @@ monkey.patch_all()
 from retrying import retry
 from openprocurement_client.client import APIBaseClient
 from utils import threaded
+from logging import getLogger
+from simplejson import loads
 
 
 class Sync(APIBaseClient):
@@ -18,16 +20,18 @@ class Sync(APIBaseClient):
         )
         self.forward_done = False
         self.backward_done = False
+        self.Logger = getLogger(__name__)
 
     @retry(stop_max_attempt_number=5)
     def get_tenders(self, params):
         if not params:
             raise ValueError
         try:
-            resp = self.get(self.prefix_path, params_dict=params)
-            return resp['data'], resp['next_page']
+            resp = self.get(self.prefix_path, params_dict=params).body_string()
+            tender_list = loads(resp)
+            return tender_list['data'], tender_list['next_page']
         except Exception, e:
-            print e
+            self.Logger.info("Error while loading feeds {}".format(e))
 
     @threaded
     def get_tenders_forward(self, queue):
@@ -37,6 +41,7 @@ class Sync(APIBaseClient):
             if not tenders_feed:
                 self.forward_done = True
                 break
+            self.Logger.info('Got feed page. Client params {}'.format(params))
             params.update(next_page)
             queue.put(tenders_feed)
 
@@ -48,6 +53,7 @@ class Sync(APIBaseClient):
             if not tenders_feed:
                 self.backward_done = True
                 break
+            self.Logger.info('Got feed page. Client params {}'.format(params))
             params.update(next_page)
             queue.put(tenders_feed)
 
