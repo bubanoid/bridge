@@ -1,0 +1,10 @@
+bin/*
+src/*
+eggs/*
+*egg*/
+develop-eggs/
+parts/*
+etc/*
+var/*
+*.pyc
+\.*
