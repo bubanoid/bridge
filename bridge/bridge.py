@@ -1,10 +1,13 @@
 from gevent import monkey
 monkey.patch_all()
 
+import sys
 import os.path
 import gevent
 import gevent.queue
 import couchdb
+import couchdb.http
+from time import sleep
 from argparse import ArgumentParser
 from ConfigParser import ConfigParser
 from logging import getLogger
@@ -39,20 +42,24 @@ class Bridge(object):
         self.get_db(db_url, config.get('db', 'name'))
 
     def get_db(self, url, name):
-        server = couchdb.Server(url)
-        if name not in server:
-            self.db = server.create(name)
-        else:
-            self.db = server[name]
-        self.Logger.info('Connected to db {} on {}'.format(name, url))
+        try:
+            server = couchdb.Server(url)
+            if name not in server:
+                self.db = server.create(name)
+            else:
+                self.db = server[name]
+            self.Logger.info('Connected to db {} on {}'.format(name, url))
+        except couchdb.http.Unauthorized:
+            print "Can't authenticate user in config. Exiting.."
+            sys.exit(2)
 
     @threaded
     def save_docs(self):
         while True:
-            tender = self.to_put_queue.get()
-            print tender
-            if not tender:
+            if self.to_put_queue.empty():
+                sleep(1)
                 continue
+            tender = self.to_put_queue.get()
             if tender.data.id not in self.db:
                 self.db[tender.data.id] = tender.data
                 self.Logger.info('Saving tender id={}'.format(tender.data.id))
@@ -65,9 +72,10 @@ class Bridge(object):
     @threaded
     def get_tender(self):
         while True:
-            tenders_list = self.to_get_queue.get()
-            if not tenders_list:
+            if self.to_get_queue.empty():
+                sleep(1)
                 continue
+            tenders_list = self.to_get_queue.get()
             for tender in tenders_list:
                 if tender['id'] not in self.db:
                     self.Logger.info(
