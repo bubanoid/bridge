@@ -1,12 +1,13 @@
 from gevent import monkey
 monkey.patch_all()
 
-from restkit.errors import RequestFailed, RequestError
+from restkit.errors import RequestFailed, RequestError, ResourceNotFound
 from retrying import retry
 from openprocurement_client.client import APIBaseClient
 from utils import threaded
 from logging import getLogger
 from simplejson import loads
+from datetime import datetime
 
 
 class Sync(APIBaseClient):
@@ -44,25 +45,37 @@ class Sync(APIBaseClient):
     def get_tenders_forward(self, queue, initial_params=None):
         params = initial_params or {'feed': 'changes'}
         while True:
-            tenders_feed, next_page = self.get_tenders(params)
-            if not tenders_feed:
-                self.forward_done = True
+            try:
+                tenders_feed, next_page = self.get_tenders(params)
+                if not tenders_feed:
+                    break
+            except ResourceNotFound:
+                self.Logger.info('ResourceNotFound with params'
+                                 ' {}, stopping'.format(params))
                 break
             self.Logger.info('Got feed page. Client params {}'.format(params))
             params.update(next_page)
             queue.put(tenders_feed)
+        self.forward_done = True
+        self.Logger.info('Sync forward done at {}'.format(datetime.now()))
 
     @threaded
     def get_tenders_backward(self, queue, initial_params=None):
         params = initial_params or {'feed': 'changes', 'descending': '1'}
         while True:
-            tenders_feed, next_page = self.get_tenders(params)
-            if not tenders_feed:
-                self.backward_done = True
+            try:
+                tenders_feed, next_page = self.get_tenders(params)
+                if not tenders_feed:
+                    break
+            except ResourceNotFound:
+                self.Logger.info('ResourceNotFound with params'
+                                 ' {}, stopping'.format(params))
                 break
             self.Logger.info('Got feed page. Client params {}'.format(params))
             params.update(next_page)
             queue.put(tenders_feed)
+        self.backward_done = True
+        self.Logger.info('Sync backward  done at {}'.format(datetime.now()))
 
     def get_tender(self, id, queue):
         queue.put(self._get_resource_item(
