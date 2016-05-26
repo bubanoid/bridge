@@ -41,8 +41,8 @@ class Sync(APIBaseClient):
             self.Logger.info("Error while loading feeds {}".format(e))
 
     @threaded
-    def get_tenders_forward(self, queue):
-        params = {'feed': 'changes'}
+    def get_tenders_forward(self, queue, initial_params=None):
+        params = initial_params or {'feed': 'changes'}
         while True:
             tenders_feed, next_page = self.get_tenders(params)
             if not tenders_feed:
@@ -53,8 +53,8 @@ class Sync(APIBaseClient):
             queue.put(tenders_feed)
 
     @threaded
-    def get_tenders_backward(self, queue):
-        params = {'feed': 'changes', 'descending': '1'}
+    def get_tenders_backward(self, queue, initial_params=None):
+        params = initial_params or {'feed': 'changes', 'descending': '1'}
         while True:
             tenders_feed, next_page = self.get_tenders(params)
             if not tenders_feed:
