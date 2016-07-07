@@ -32,8 +32,8 @@ class Bridge(object):
         fileConfig(args.c)
         self.Logger = getLogger(__name__)
         self.client = Sync(config)
-        self.to_get_queue = gevent.queue.Queue()
-        self.to_put_queue = gevent.queue.Queue()
+        self.to_get_queue = gevent.queue.Queue(maxsize=500)
+        self.to_put_queue = gevent.queue.Queue(maxsize=500)
         db_url = create_db_url(
             config.get('user', 'username'),
             config.get('user', 'password'),
@@ -60,15 +60,15 @@ class Bridge(object):
             if self.to_put_queue.empty():
                 sleep(1)
                 continue
-            tender = self.to_put_queue.get()
-            if tender.data.id not in self.db:
-                self.db[tender.data.id] = tender.data
-                self.Logger.info('Saving tender id={}'.format(tender.data.id))
-            else:
-                doc = self.db.get(tender.data.id)
-                doc = tender
-                self.db.save(doc)
-                self.Logger.info('Update tender id={}'.format(tender.data.id))
+            for tender in self.to_put_queue:
+                if tender.data.id not in self.db:
+                    self.db[tender.data.id] = tender.data
+                    self.Logger.info('Saving tender id={}'.format(tender.data.id))
+                else:
+                    doc = self.db.get(tender.data.id)
+                    doc = tender.data
+                    self.db.save(doc)
+                    self.Logger.info('Update tender id={}'.format(tender.data.id))
 
     @threaded
     def get_tender(self):
@@ -76,40 +76,41 @@ class Bridge(object):
             if self.to_get_queue.empty():
                 sleep(1)
                 continue
-            tenders_list = self.to_get_queue.get()
-            for tender in tenders_list:
-                if tender['id'] not in self.db:
-                    self.Logger.info(
-                        'Tender id={} not in database'.format(tender['id'])
-                    )
-                    try:
-                        self.client.get_tender(
-                            tender['id'], self.to_put_queue
-                        )
+            for tenders_list in self.to_get_queue:
+                for tender in tenders_list:
+                    if tender['id'] not in self.db:
                         self.Logger.info(
-                            'Successfully got tender'
-                            ' id={}'.format(tender['id'])
+                            'Tender id={} not in database'.format(tender['id'])
                         )
-                    except RequestFailed, e:
-                        self.Logger.info(
-                            "Request falied while getting tender id={} "
-                            "with error {}".format(tender['id'], e))
-                    except RequestError, e:
-                        self.Logger.info(
-                            "RequestError {} while getting tender "
-                            "id={}".format(e, tender['id'])
-                        )
-                    except Exception, e:
-                        self.Logger.info(
-                            "Error while loading feeds {}".format(e)
-                        )
+                        try:
+                            self.client.get_tender(
+                                tender['id'], self.to_put_queue
+                            )
+                            self.Logger.info(
+                                'Successfully got tender'
+                                ' id={}'.format(tender['id'])
+                            )
+                        except RequestFailed, e:
+                            self.Logger.info(
+                                "Request falied while getting tender id={} "
+                                "with error {}".format(tender['id'], e))
+                        except RequestError, e:
+                            self.Logger.info(
+                                "RequestError {} while getting tender "
+                                "id={}".format(e, tender['id'])
+                            )
+                        except Exception, e:
+                            self.Logger.info(
+                                "Error while loading feeds {}".format(e)
+                            )
 
-                else:
-                    doc = self.db.get(tender['id'])
-                    if tender['dateModified'] > doc['dateModified']:
-                        self.client.get_tender(
-                            tender['id'], self.to_put_queue
-                        )
+                    else:
+                        doc = self.db.get(tender['id'])
+                        if tender['dateModified'] > doc['dateModified']:
+                            self.client.get_tender(
+                                tender['id'], self.to_put_queue
+                            )
+            self.to_put_queue.put(StopIteration)
 
     def run(self):
         try:

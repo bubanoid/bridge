@@ -8,6 +8,7 @@ from utils import threaded
 from logging import getLogger
 from simplejson import loads
 from datetime import datetime
+from time import sleep
 
 
 class Sync(APIBaseClient):
@@ -48,6 +49,8 @@ class Sync(APIBaseClient):
             try:
                 tenders_feed, next_page = self.get_tenders(params)
                 if not tenders_feed:
+                    if self.backward_done:
+                        queue.put(StopIteration)
                     break
             except ResourceNotFound:
                 self.Logger.info('ResourceNotFound with params'
@@ -55,6 +58,9 @@ class Sync(APIBaseClient):
                 break
             self.Logger.info('Got feed page. Client params {}'.format(params))
             params.update(next_page)
+            if queue.full():
+                while queue.full():
+                    sleep(0.1)
             queue.put(tenders_feed)
         self.forward_done = True
         self.Logger.info('Sync forward done at {}'.format(datetime.now()))
@@ -66,6 +72,8 @@ class Sync(APIBaseClient):
             try:
                 tenders_feed, next_page = self.get_tenders(params)
                 if not tenders_feed:
+                    if self.forward_done:
+                        queue.put(StopIteration)
                     break
             except ResourceNotFound:
                 self.Logger.info('ResourceNotFound with params'
@@ -73,6 +81,9 @@ class Sync(APIBaseClient):
                 break
             self.Logger.info('Got feed page. Client params {}'.format(params))
             params.update(next_page)
+            if queue.full():
+                while queue.full():
+                    sleep(0.1)
             queue.put(tenders_feed)
         self.backward_done = True
         self.Logger.info('Sync backward  done at {}'.format(datetime.now()))
